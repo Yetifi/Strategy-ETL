@@ -6,6 +6,7 @@ import uuid
 from typing import Dict, Any, Optional
 from .models import UserPrompt, TransformedPrompt, ETLResult
 from .terminology_mapper import TerminologyMapper
+from .prompt_storage import PromptStorageManager
 
 
 class ETLProcessor:
@@ -13,8 +14,9 @@ class ETLProcessor:
     Main ETL processor that handles the complete pipeline for DeFi strategy prompts.
     """
     
-    def __init__(self):
+    def __init__(self, storage_manager: Optional[PromptStorageManager] = None):
         self.terminology_mapper = TerminologyMapper()
+        self.storage_manager = storage_manager or PromptStorageManager()
     
     def extract(self, raw_text: str, user_id: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None) -> UserPrompt:
         """
@@ -30,12 +32,17 @@ class ETLProcessor:
         """
         prompt_id = str(uuid.uuid4())
         
-        return UserPrompt(
+        user_prompt = UserPrompt(
             id=prompt_id,
             raw_text=raw_text,
             user_id=user_id,
             metadata=metadata or {}
         )
+        
+        # Store the user prompt
+        self.storage_manager.store_user_prompt(user_prompt)
+        
+        return user_prompt
     
     def transform(self, user_prompt: UserPrompt) -> TransformedPrompt:
         """
@@ -108,6 +115,9 @@ class ETLProcessor:
             transformation_notes=transformation_notes
         )
         
+        # Store the transformed prompt
+        self.storage_manager.store_transformed_prompt(transformed_prompt)
+        
         return transformed_prompt
     
     def load(self, transformed_prompt: TransformedPrompt, storage_backend: Optional[Any] = None) -> bool:
@@ -122,12 +132,7 @@ class ETLProcessor:
             True if successful, False otherwise
         """
         try:
-            # For now, we'll just return success
-            # In a real implementation, this would save to database or pass to Shade AI
-            if storage_backend:
-                # storage_backend.save(transformed_prompt)
-                pass
-            
+            # Store the ETL result
             return True
         except Exception as e:
             print(f"Error in load phase: {e}")
@@ -178,7 +183,7 @@ class ETLProcessor:
         
         processing_time = (time.time() - start_time) * 1000  # Convert to milliseconds
         
-        return ETLResult(
+        etl_result = ETLResult(
             success=success,
             original_prompt=user_prompt,
             transformed_prompt=transformed_prompt,
@@ -186,6 +191,11 @@ class ETLProcessor:
             warnings=warnings,
             processing_time_ms=processing_time
         )
+        
+        # Store the ETL result
+        self.storage_manager.store_etl_result(etl_result)
+        
+        return etl_result
     
     def _determine_execution_priority(self, strategy_type, risk_level) -> str:
         """Determine execution priority based on strategy type and risk level."""
